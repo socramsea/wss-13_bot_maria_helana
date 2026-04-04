@@ -10,6 +10,7 @@
 """
 🤖 MARIA HELENA Trading Bot v0.2
 """
+
 # Standard library imports
 import time
 import logging
@@ -29,6 +30,54 @@ from dotenv import load_dotenv
 # Load environment variables BEFORE importing config
 load_dotenv()
 
+# ADIÇÃO: Kill-switch e bloqueio de trade real quando em PAPER
+def assert_not_live():
+    abort_if_live = os.getenv("ABORT_IF_LIVE", "true").lower() == "true"
+    live_mode = os.getenv("LIVE_MODE", "false").lower() == "true"
+    route = os.getenv("EXECUTION_ROUTE", "paper").lower()
+    if abort_if_live and (live_mode or route not in ("paper", "testnet")):
+        print("[KILL-SWITCH] Execução bloqueada (modo live/rota inválida). Ajuste .env e tente novamente.")
+        sys.exit(1)
+    if route != "paper":
+        print(f"[WARN] EXECUTION_ROUTE={route}. Para simulação, use 'paper'.")
+
+assert_not_live()
+
+
+def install_ccxt_safety(exchange: Any) -> Any:
+    """
+    Bloqueia qualquer operação de trade quando LIVE_MODE=false.
+    Mesmo se createOrder/cancelOrder for chamado por engano, vai falhar.
+    """
+    live_mode = os.getenv("LIVE_MODE", "false").lower() == "true"
+    if live_mode:
+        return exchange
+
+    def _block(*args, **kwargs):
+        raise RuntimeError("Trade bloqueado: modo PAPER ativo (LIVE_MODE=false)")
+
+    for name in ["create_order", "createOrder", "cancel_order", "cancelOrder", "edit_order", "editOrder"]:
+        if hasattr(exchange, name):
+            setattr(exchange, name, _block)
+
+    # Cobrir endpoints privados que contenham "order"
+    for name in dir(exchange):
+        if "order" in name.lower() and name.startswith("private"):
+            try:
+                setattr(exchange, name, _block)
+            except Exception:
+                pass
+
+    return exchange
+
+
+# Tornar 'maria-helena-scripts' importável (este arquivo está na raiz do projeto)
+# Adiciona o diretório atual do arquivo ao sys.path para resolver imports locais
+# (evita criar um caminho duplicado ".../maria-helena-scripts/maria-helena-scripts").
+sys.path.append(os.path.dirname(__file__))
+from paper_engine import PaperEngine
+from execution_router import ExecutionRouter
+
 # Local imports
 from config import CONFIG  # Ensure CONFIG is imported after load_dotenv
 from protection.risk_manager import RiskManager
@@ -43,10 +92,10 @@ from core.orders.order_manager import OrderManager
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("maria_helena_bot.log"),
-        logging.StreamHandler(sys.stdout)  # Also output to console
+        logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
@@ -58,61 +107,67 @@ console = Console()
 class MariaHelenaBot:
     """
     Bot de trading automatizado com múltiplas camadas de proteção.
-    
-    Características:
     - Estratégia RSI + Volume
     - Proteção de risco (RiskManager)
     - Circuit Breaker para perdas consecutivas
     - Cash Gate para validação de ordens
     - Modo Mentor para aprendizado
     """
-    
+
     def __init__(self, config: Dict[str, Any] = CONFIG):
         """
         Inicializa o bot com todas as configurações, proteções e estratégias.
-        
-        Args:
-            config (Dict[str, Any]): Dicionário de configurações do bot.
         """
         self.config: Dict[str, Any] = config
-        
-        self.exchange_name: str = config['EXCHANGE']
-        self.symbol: str = config['SYMBOL']
-        self.timeframe: str = config['TIMEFRAME']
-        self.mentor_mode: bool = config['MENTOR_MODE']
-        self.live_mode: bool = config['LIVE_MODE']
-        self.check_interval: int = config['CHECK_INTERVAL']
-        
-        self.capital: float = config['INITIAL_CAPITAL']  # Initial capital for tracking purposes
-        self.current_balance: float = self.capital  # This would be updated from exchange for live trading
+
+        self.exchange_name: str = config["EXCHANGE"]
+        self.symbol: str = config["SYMBOL"]
+        self.timeframe: str = config["TIMEFRAME"]
+        self.mentor_mode: bool = config["MENTOR_MODE"]
+        self.live_mode: bool = config["LIVE_MODE"]
+        self.check_interval: int = config["CHECK_INTERVAL"]
+
+        self.capital: float = config["INITIAL_CAPITAL"]
+        self.current_balance: float = self.capital  # atualizado via exchange em live
 
         self.exchange = self._initialize_exchange()
-        
+
+        # ADIÇÃO: roteador de execução (paper/testnet/real)
+        self.execution_route: str = os.getenv("EXECUTION_ROUTE", "paper").lower()
+        self.paper_engine = PaperEngine(
+            fee_rate=float(os.getenv("PAPER_FEE_RATE", "0.0010")),
+            slippage_bp=int(os.getenv("PAPER_SLIPPAGE_BP", "5"))
+        )
+        self.router = ExecutionRouter(route=self.execution_route, paper_engine=self.paper_engine)
+
         # Initialize protection modules
         self.risk_manager: RiskManager = RiskManager(self.config)
         self.technical_guard: TechnicalGuard = TechnicalGuard()
         self.circuit_breaker: CircuitBreaker = CircuitBreaker(self.config)
         self.cash_gate: CashGate = CashGate(self.config["INITIAL_CAPITAL"])
-        
+
         # Initialize data and strategy modules
         self.normalizer: Normalizer = Normalizer(self.config)
         self.strategy: RSIVolumeStrategy = RSIVolumeStrategy(self.config)
-        
+
         self.mentor_processor: Optional[MentorSignalProcessor] = None
         if self.mentor_mode:
             self.mentor_processor = MentorSignalProcessor()
 
         # Initialize order management
         self.order_manager: OrderManager = OrderManager(
-            self.exchange, 
-            self.risk_manager, 
-            self.technical_guard, 
-            self.circuit_breaker, 
+            self.exchange,
+            self.risk_manager,
+            self.technical_guard,
+            self.circuit_breaker,
             self.cash_gate
         )
 
         self._print_startup_panel()
-        logger.info(f"Maria Helena Bot inicializado para {self.symbol} ({self.timeframe}) no modo {'AO VIVO' if self.live_mode else 'TESTE'}.")
+        logger.info(
+            f"Maria Helena Bot inicializado para {self.symbol} ({self.timeframe}) no modo "
+            f"{'AO VIVO' if self.live_mode else 'TESTE/PAPER'}."
+        )
 
     def _initialize_exchange(self) -> Any:
         """
@@ -120,47 +175,50 @@ class MariaHelenaBot:
         Carrega chaves de API do ambiente ou usa valores padrão.
         """
         exchange_class = getattr(ccxt, self.exchange_name)
-        
+
         exchange_params: Dict[str, Any] = {
-            'enableRateLimit': True,
-            'options': self.config['OPTIONS'],
-            'newUpdates': True,
+            "enableRateLimit": True,
+            "options": self.config["OPTIONS"],
+            "newUpdates": True,
         }
 
-        if self.config['TESTNET']:
-            exchange_params['options']['defaultType'] = 'spot'
-            if self.exchange_name == 'binance':
-                exchange_params['urls'] = {
-                    'api': 'https://testnet.binance.vision/api',
-                    'www': 'https://testnet.binance.com'
+        if self.config["TESTNET"]:
+            exchange_params["options"]["defaultType"] = "spot"
+            if self.exchange_name == "binance":
+                exchange_params["urls"] = {
+                    "api": "https://testnet.binance.vision/api",
+                    "www": "https://testnet.binance.com"
                 }
             logger.info(f"Usando Testnet para {self.exchange_name}.")
-        
-        api_key = os.getenv(f"{self.exchange_name.upper()}_API_KEY", self.config['API_KEY'])
-        secret_key = os.getenv(f"{self.exchange_name.upper()}_SECRET_KEY", self.config['SECRET_KEY'])
-        
+
+        api_key = os.getenv(f"{self.exchange_name.upper()}_API_KEY", self.config["API_KEY"])
+        secret_key = os.getenv(f"{self.exchange_name.upper()}_SECRET_KEY", self.config["SECRET_KEY"])
+
         if api_key and secret_key and self.live_mode:
-            exchange_params['apiKey'] = api_key
-            exchange_params['secret'] = secret_key
+            exchange_params["apiKey"] = api_key
+            exchange_params["secret"] = secret_key
         elif self.live_mode:
             logger.warning("Modo AO VIVO ativado, mas API_KEY ou SECRET_KEY não configuradas.")
             console.print("[red]ERRO: API_KEY/SECRET_KEY não configuradas para modo AO VIVO![/red]")
             sys.exit(1)
-        
+
         exchange = exchange_class(exchange_params)
 
         try:
             exchange.load_markets()
+            # ADIÇÃO: bloquear qualquer trade real quando LIVE_MODE=false
+            exchange = install_ccxt_safety(exchange)
+
             logger.info(f"Conectado à exchange: {self.exchange_name.upper()} (Testnet: {self.config['TESTNET']})")
             if self.live_mode:
                 balance = exchange.fetch_balance()
-                self.current_balance = balance['total'][self.symbol.split('/')[1]]
+                self.current_balance = balance["total"][self.symbol.split("/")[1]]
                 logger.info(f"Saldo atual na exchange: {self.current_balance} {self.symbol.split('/')[1]}")
         except Exception as e:
             console.print(f"[red]❌ Erro ao conectar ou carregar mercados da exchange: {e}[/red]")
             logger.error(f"Erro ao conectar ou carregar mercados da exchange: {e}", exc_info=True)
             sys.exit(1)
-            
+
         return exchange
 
     def _fetch_ohlcv(self) -> Optional[List[List[float]]]:
@@ -171,7 +229,7 @@ class MariaHelenaBot:
             ohlcv = self.exchange.fetch_ohlcv(
                 self.symbol,
                 self.timeframe,
-                limit=self.config['LOOKBACK_PERIOD'] + 5
+                limit=self.config["LOOKBACK_PERIOD"] + 5
             )
             if not ohlcv:
                 console.print(f"[yellow]⚠️ Nenhum dado OHLCV recebido para {self.symbol}.[/yellow]")
@@ -202,90 +260,105 @@ class MariaHelenaBot:
         try:
             # Prepara ticker para o normalizer
             ticker = {
-                'last': ohlcv[-1][4],  # Close price
-                'quoteVolume': ohlcv[-1][5],  # Volume
-                'timestamp': ohlcv[-1][0]  # Timestamp
+                "last": ohlcv[-1][4],       # Close price
+                "quoteVolume": ohlcv[-1][5],  # Volume
+                "timestamp": ohlcv[-1][0]   # Timestamp
             }
-            
+
             # Normaliza os dados
             normalized_data = self.normalizer.process(ohlcv, ticker)
-            
+
             # Converte OHLCV para DataFrame para a estratégia
             df = pd.DataFrame(
-                ohlcv, 
-                columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                ohlcv,
+                columns=["timestamp", "open", "high", "low", "close", "volume"]
             )
-            
+
             # Analisa com a estratégia
             signal = self.strategy.analyze(df)
-            
+
             # Adiciona preço atual ao sinal
-            signal['price'] = self._get_latest_price(ohlcv)
-            
+            signal["price"] = self._get_latest_price(ohlcv)
+
             # Adiciona dados normalizados ao sinal
             signal.update(normalized_data)
-            
+
             if self.mentor_mode and self.mentor_processor:
                 self.mentor_processor.process_signal(signal)
-            
-            logger.info(f"SINAL GERADO: {signal}") # <--- CORREÇÃO APLICADA AQUI
+
+            logger.info(f"SINAL GERADO: {signal}")
             return signal
-            
+
         except Exception as e:
             console.print(f"[red]❌ Erro na análise da estratégia: {e}[/red]")
             logger.error(f"Erro na análise da estratégia: {e}", exc_info=True)
             return {
-                'action': 'HOLD', 
-                'confidence': 0.0, 
-                'price': 0.0,
-                'reason': f"Erro na análise: {e}"
+                "action": "HOLD",
+                "confidence": 0.0,
+                "price": 0.0,
+                "reason": f"Erro na análise: {e}"
             }
 
     def _process_signal(self, signal: Dict[str, Any]) -> None:
         """Processa sinal de trading"""
-        action = signal.get('action', 'HOLD')
-        
-        if action == 'HOLD':
+        action = signal.get("action", "HOLD")
+
+        if action == "HOLD":
             return
-        
+
         # 1. Pega preço atual
-        current_price = signal.get('price', 0)
-        
+        current_price = signal.get("price", 0.0)
         if current_price <= 0:
             logger.error("Preço inválido no sinal")
             return
-        
+
         # 2. Calcula tamanho da posição
         position_size_usd = self.risk_manager.calculate_position_size(
-            self.current_balance, 
+            self.current_balance,
             signal
         )
-        
         if position_size_usd <= 0:
             logger.warning("Tamanho de posição calculado é zero ou negativo")
             return
-        
+
         # 3. Valida com CashGate
         can_reserve, reason = self.cash_gate.can_reserve(position_size_usd)
         if not can_reserve:
             console.print(f"[yellow]🚫 CashGate bloqueou: {reason}[/yellow]")
             logger.warning(f"🚫 CashGate bloqueou: {reason}")
             return
-        
+
         # 4. Reserva o capital
         if not self.cash_gate.reserve(position_size_usd):
             logger.error("Falha ao reservar capital no CashGate")
             return
-        
-        # 5. Executa ordem via OrderManager
+
+        # 5. Executa (paper vs live)
         try:
+            qty = position_size_usd / current_price
+
+            # Se NÃO for live ou rota for 'paper', simular execução (sem risco)
+            if not self.live_mode or self.execution_route == "paper":
+                result = self.router.send_order(
+                    side="buy" if action.upper() == "BUY" else "sell",
+                    qty=qty,
+                    price=current_price,
+                    kind="market"
+                )
+                console.print(f"[green]✅ (PAPER) Ordem simulada: {result}[/green]")
+                logger.info(f"(PAPER) Ordem simulada: {result}")
+                # Opcional: liberar reserva no paper (se não quiser reter caixa simulada)
+                # self.cash_gate.release(position_size_usd)
+                return
+
+            # Live: usar OrderManager (ativar apenas quando decidir operar real)
             order = self.order_manager.execute_order(
                 action=action,
-                amount=position_size_usd / current_price,
+                amount=qty,
                 price=current_price,
                 signal=signal
             )
-            
+
             if order:
                 console.print(f"[green]✅ Ordem executada: {order.get('id', 'N/A')}[/green]")
                 logger.info(f"Ordem executada com sucesso: {order}")
@@ -293,7 +366,7 @@ class MariaHelenaBot:
                 self.cash_gate.release(position_size_usd)
                 console.print("[red]❌ Falha ao executar ordem[/red]")
                 logger.error("OrderManager retornou None")
-        
+
         except Exception as e:
             self.cash_gate.release(position_size_usd)
             logger.error(f"Erro ao executar ordem: {e}", exc_info=True)
@@ -316,16 +389,16 @@ class MariaHelenaBot:
         panel_content = Text(justify="center")
         panel_content.append(f"Par: [cyan]{self.symbol}[/cyan] | Intervalo: [cyan]{self.timeframe}[/cyan]\n", style="white")
         panel_content.append(f"Preço Atual: [bold green]${current_price:,.2f}[/bold green]\n", style="white")
-        
+
         position_info = self.order_manager.get_position_info()
-        if position_info['is_in_position']:
+        if position_info["is_in_position"]:
             panel_content.append(
                 f"Posição: [yellow]ABERTA[/yellow] | "
                 f"Entrada: [yellow]${position_info['entry_price']:,.2f}[/yellow] | "
-                f"Quantidade: [yellow]{position_info['amount']:.4f} {self.symbol.split('/')[0]}[/yellow]\n", 
+                f"Quantidade: [yellow]{position_info['amount']:.4f} {self.symbol.split('/')[0]}[/yellow]\n",
                 style="white"
             )
-            unrealized_pnl = (current_price - position_info['entry_price']) * position_info['amount']
+            unrealized_pnl = (current_price - position_info["entry_price"]) * position_info["amount"]
             pnl_style = "green" if unrealized_pnl >= 0 else "red"
             panel_content.append(f"P&L Não Realizado: [{pnl_style}]${unrealized_pnl:,.2f}[/{pnl_style}]\n", style="white")
         else:
@@ -336,7 +409,7 @@ class MariaHelenaBot:
             panel_content.append(f"Circuit Breaker: [bold red]ATIVADO[/bold red] ({circuit_breaker_status})\n", style="white")
         else:
             panel_content.append(f"Circuit Breaker: [green]OK[/green] ({circuit_breaker_status})\n", style="white")
-        
+
         console.print(Panel(panel_content, title="⚙️ Status Atual do Bot", border_style="dim"))
 
     def run(self) -> None:
@@ -349,19 +422,19 @@ class MariaHelenaBot:
                 if ohlcv_data:
                     signal = self._analyze_strategy(ohlcv_data)
                     self._process_signal(signal)
-                    
+
                     # Exibe painel de status
                     current_price = self._get_latest_price(ohlcv_data)
                     self._print_status_panel(current_price)
-                    
+
                 # Update current balance from exchange for live trading
-                if self.live_mode and hasattr(self.exchange, 'fetch_balance'):
+                if self.live_mode and hasattr(self.exchange, "fetch_balance"):
                     try:
                         balance = self.exchange.fetch_balance()
-                        self.current_balance = balance['total'][self.symbol.split('/')[1]]
+                        self.current_balance = balance["total"][self.symbol.split("/")[1]]
                     except Exception as e:
                         logger.warning(f"Erro ao atualizar saldo: {e}")
-            
+
             except ccxt.NetworkError as e:
                 console.print(f"[red]❌ Erro de rede: {e}[/red]")
                 logger.warning(f"Erro de rede, tentando novamente em {self.check_interval}s. {e}")

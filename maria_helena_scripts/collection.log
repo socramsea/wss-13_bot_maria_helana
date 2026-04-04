@@ -1,0 +1,88 @@
+2025-11-07 14:51:16,075 - INFO - 📊 COLETANDO DADOS REAIS DO MERCADO...
+2025-11-07 14:51:16,075 - INFO - ==================================================
+2025-11-07 14:51:16,075 - INFO - 📈 Buscando 14 dias de histórico REAL...
+2025-11-07 14:51:16,204 - INFO - ✅ 15 dias de histórico recebidos
+2025-11-07 14:51:16,209 - INFO - ✅ 15 candles REAIS armazenados!
+2025-11-07 14:51:16,210 - INFO - 💰 Buscando preço ATUAL do mercado...
+2025-11-07 14:51:16,331 - INFO - ✅ Dados REAIS recebidos: {'bitcoin': {'usd': 100447, 'usd_market_cap': 2006109544248.5242, 'usd_24h_vol': 85950087611.08635}}
+2025-11-07 14:51:16,332 - INFO - Bitcoin AGORA: $100447
+2025-11-07 14:51:16,332 - INFO - ==================================================
+2025-11-07 14:51:16,332 - INFO - ✅ Coleta de dados REAIS concluída!
+==================================================
+🏥 HEALTH CHECK - 2025-11-07 14:51:16
+==================================================
+
+📊 Database: ✅ OK
+   Total de candles: 16
+   Última atualização: 2025-11-07 14:51:16
+
+🤖 N8N: ✅ N8N Online
+
+==================================================
+[Fri Nov  7 14:51:16 UTC 2025] ✅ Coleta concluída
+2025-11-07 14:55:01,661 - INFO - 📊 COLETANDO DADOS REAIS DO MERCADO...
+2025-11-07 14:55:01,662 - INFO - ==================================================
+2025-11-07 14:55:01,662 - INFO - 📈 Buscando 14 dias de histórico REAL...
+2025-11-07 14:55:01,813 - INFO - ✅ 15 dias de histórico recebidos
+2025-11-07 14:55:01,824 - INFO - ✅ 15 candles REAIS armazenados!
+2025-11-07 14:55:01,825 - INFO - 💰 Buscando preço ATUAL do mercado...
+2025-11-07 14:55:01,976 - INFO - ✅ Dados REAIS recebidos: {'bitcoin': {'usd': 100507, 'usd_market_cap': 2003504740927.5344, 'usd_24h_vol': 85815838742.82875}}
+2025-11-07 14:55:01,978 - INFO - Bitcoin AGORA: $100507
+2025-11-07 14:55:01,978 - INFO - ==================================================
+2025-11-07 14:55:01,979 - INFO - ✅ Coleta de dados REAIS concluída!
+==================================================
+🏥 HEALTH CHECK - 2025-11-07 14:55:02
+==================================================
+
+📊 Database: ✅ OK
+   Total de candles: 17
+   Última atualização: 2025-11-07 14:55:01
+
+🤖 N8N: ✅ N8N Online
+
+==================================================
+[Fri Nov  7 14:55:02 UTC 2025] ✅ Coleta concluída
+2025-11-07 15:00:01,335 - INFO - 📊 COLETANDO DADOS REAIS DO MERCADO...
+2025-11-07 15:00:01,335 - INFO - ==================================================
+2025-11-07 15:00:01,335 - INFO - 📈 Buscando 14 dias de histórico REAL...
+2025-11-07 15:00:01,490 - INFO - ✅ 15 dias de histórico recebidos
+2025-11-07 15:00:01,496 - INFO - ✅ 15 candles REAIS armazenados!
+2025-11-07 15:00:01,496 - INFO - 💰 Buscando preço ATUAL do mercado...
+2025-11-07 15:00:01,669 - INFO - ✅ Dados REAIS recebidos: {'bitcoin': {'usd': 100670, 'usd_market_cap': 2004774750083.9426, 'usd_24h_vol': 86444557731.97034}}
+2025-11-07 15:00:01,671 - INFO - Bitcoin AGORA: $100670
+2025-11-07 15:00:01,671 - INFO - ==================================================
+2025-11-07 15:00:01,671 - INFO - ✅ Coleta de dados REAIS concluída!
+==================================================
+🏥 HEALTH CHECK - 2025-11-07 15:00:01
+==================================================
+
+📊 Database: ✅ OK
+   Total de candles: 18
+   Última atualização: 2025-11-07 15:00:01
+
+🤖 N8N: ✅ N8N Online
+
+==================================================
+[Fri Nov  7 15:00:01 UTC 2025] ✅ Coleta concluída
+2025-11-07 15:05:02,053 - INFO - 📊 COLETANDO DADOS REAIS DO MERCADO...
+2025-11-07 15:05:02,053 - INFO - ==================================================
+2025-11-07 15:05:02,053 - INFO - 📈 Buscando 14 dias de histórico REAL...
+2025-11-07 15:05:02,204 - INFO - ✅ 15 dias de histórico recebidos
+2025-11-07 15:05:02,211 - INFO - ✅ 15 candles REAIS armazenados!
+2025-11-07 15:05:02,212 - INFO - 💰 Buscando preço ATUAL do mercado...
+2025-11-07 15:05:02,352 - INFO - ✅ Dados REAIS recebidos: {'bitcoin': {'usd': 100612, 'usd_market_cap': 2008063599722.745, 'usd_24h_vol': 86032497641.27654}}
+2025-11-07 15:05:02,353 - INFO - Bitcoin AGORA: $100612
+2025-11-07 15:05:02,353 - INFO - ==================================================
+2025-11-07 15:05:02,353 - INFO - ✅ Coleta de dados REAIS concluída!
+==================================================
+🏥 HEALTH CHECK - 2025-11-07 15:05:02
+==================================================
+
+📊 Database: ✅ OK
+   Total de candles: 19
+   Última atualização: 2025-11-07 15:05:02
+
+🤖 N8N: ✅ N8N Online
+
+==================================================
+[Fri Nov  7 15:05:02 UTC 2025] ✅ Coleta concluída
